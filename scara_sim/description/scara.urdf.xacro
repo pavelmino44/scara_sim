@@ -25,7 +25,7 @@
     </visual>
   </link>
 
-  <joint name="joint1" type="revolute">
+  <joint name="joint1" type="continuous">
     <parent link="base_link"/>
     <child link="link1"/>
     <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -55,7 +55,7 @@
     </collision>
   </link>
 
-  <joint name="joint2" type="revolute">
+  <joint name="joint2" type="continuous">
     <parent link="link1"/>
     <child link="link2"/>
     <origin xyz="${L1} 0 ${radius*2}" rpy="0 0 0"/>
@@ -119,7 +119,7 @@
         <param name="max">1000</param>
       </command_interface>
       <state_interface name="position">
-        <param name="initial_value">2.35</param> <!-- q1_start в радианах -->
+        <param name="initial_value">-3.0826809323106694</param> <!-- q1_start в радианах -->
       </state_interface>
       <state_interface name="velocity"/>
       <state_interface name="effort"/>
@@ -130,7 +130,7 @@
         <param name="max">1000</param>
       </command_interface>
       <state_interface name="position">
-        <param name="initial_value">2.34</param> <!-- q2_start в радианах -->
+        <param name="initial_value">1.920753038037959</param> <!-- q2_start в радианах -->
       </state_interface>
       <state_interface name="velocity"/>
       <state_interface name="effort"/>

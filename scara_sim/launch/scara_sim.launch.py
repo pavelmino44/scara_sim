@@ -36,7 +36,11 @@ def generate_launch_description():
         package='robot_state_publisher',
         executable='robot_state_publisher',
         output='screen',
-        parameters=[robot_description]
+        parameters=[
+            robot_description,
+            {'use_sim_time': True}
+        ],
+        
     )
 
     # Спавн робота
@@ -44,7 +48,9 @@ def generate_launch_description():
         package='ros_gz_sim',
         executable='create',
         arguments=['-topic', 'robot_description', '-name', 'scara', '-allow_renaming', 'true'],
-        output='screen'
+        output='screen',
+        parameters=[{'use_sim_time': True}]
+        
     )
 
     # Spawner'ы контроллеров
@@ -52,14 +58,17 @@ def generate_launch_description():
         package='controller_manager',
         executable='spawner',
         arguments=['joint_state_broadcaster'],
-        output='screen'
+        output='screen',
+        parameters=[{'use_sim_time': True}]
+        
     )
 
     effort_controller_spawner = Node(
         package='controller_manager',
         executable='spawner',
         arguments=['effort_controller', '--param-file', controllers_yaml],
-        output='screen'
+        output='screen',
+        parameters=[{'use_sim_time': True}]
     )
 
     # Публикатор моментов
@@ -83,20 +92,26 @@ def generate_launch_description():
         package='ros_gz_bridge',
         executable='parameter_bridge',
         arguments=['/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock'],
-        output='screen'
+        output='screen',
+        parameters=[{'use_sim_time': True}]
+        
     )
     
     rviz = Node(
         package='rviz2',
         executable='rviz2',
         arguments=['-d', rviz_config],
-        output='screen'
+        output='screen',
+        parameters=[{'use_sim_time': True}]
+        
     )
     
     trajectory_visualizer = Node(
         package='scara_sim',
         executable='trajectory_visualizer',
-        output='screen'
+        output='screen',
+        parameters=[{'use_sim_time': True}]
+        
     )
 
     return LaunchDescription([

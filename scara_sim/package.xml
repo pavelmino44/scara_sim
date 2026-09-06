@@ -21,7 +21,7 @@
   <depend>xacro</depend>
   <depend>launch</depend>
   <depend>launch_ros</depend>
-  <depend>ing_ros2_control</depend>
+  <depend>ign_ros2_control</depend>
   <depend>ros_gz_bridge</depend>
 
   <test_depend>ament_copyright</test_depend>

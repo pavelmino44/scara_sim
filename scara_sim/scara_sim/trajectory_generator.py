@@ -212,6 +212,8 @@ def main():
     tau1 = [p.tau1 for p in points]
     tau2 = [p.tau2 for p in points]
     
+    print(f'{q1[0]=}, {q2[0]=} ')
+    
     
     
     pkg_scara_sim = get_package_share_directory('scara_sim')

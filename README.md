@@ -17,7 +17,9 @@ colcon build --symlink-install && source install/local_setup.bash
 ros2 launch scara_sim scara_sim.launch.py 
 ```
 
-4. Run effort commands
+4. Run effort commands. In the new terminal:
 ```bash
-ros2 run scara_sim effort_publisher
+cd some_ws
+source install/local_setup.bash
+ros2 launch scara_sim effort_publisher.launch.py
 ```
