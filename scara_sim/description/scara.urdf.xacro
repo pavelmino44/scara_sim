@@ -36,7 +36,7 @@
 
   <link name="link1">
     <inertial>
-      <origin xyz="${L1/2} 0 0" rpy="0 0 0"/>
+      <origin xyz="${L1/2} 0 0" rpy="0 1.5708 0"/>
       <mass value="${M1}"/>
       <inertia ixx="${Ixx1}" ixy="0" ixz="0" iyy="${Iyy1}" iyz="0" izz="${Izz1}"/>
     </inertial>

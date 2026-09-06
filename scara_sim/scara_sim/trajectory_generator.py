@@ -16,8 +16,8 @@ m1 = rho * np.pi * (d/2)**2 * L1   # ≈ 1.924 кг
 m2 = rho * np.pi * (d/2)**2 * L2   # ≈ 1.374 кг
 l1 = L1/2
 l2 = L2/2
-I1zz = (1/12) * m1 * L1**2
-I2zz = (1/12) * m2 * L2**2
+I1zz = (1/12) * m1 * (3*(d/2)**2 + L1**2)
+I2zz = (1/12) * m2 * (3*(d/2)**2 + L2**2)
 b1 = b2 = 0.1      # вязкое трение
 
 # ------------------------- Dataclasses -------------------------
@@ -187,9 +187,24 @@ def generate_trajectory(segments: List[Segment], dt: float = 0.001) -> List[Traj
         M = np.array([[M11, M12], [M12, M22]])
         impulse = M @ delta_q_dot
         tau_imp = impulse / dt
-        # Перезаписываем моменты в последней точке
         last.tau1 = tau_imp[0]
         last.tau2 = tau_imp[1]
+
+        # Дополнительная точка с нулевыми моментами
+        zero_point = TrajectoryPoint(
+            t=last.t + dt,
+            x=last.x,
+            y=last.y,
+            q1=last.q1,
+            q2=last.q2,
+            q1_dot=0.0,
+            q2_dot=0.0,
+            q1_ddot=0.0,
+            q2_ddot=0.0,
+            tau1=0.0,
+            tau2=0.0
+        )
+        points.append(zero_point)
 
     return points
 

@@ -1,5 +1,5 @@
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, RegisterEventHandler
+from launch.actions import IncludeLaunchDescription, RegisterEventHandler, ExecuteProcess, TimerAction
 from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
@@ -38,7 +38,10 @@ def generate_launch_description():
         output='screen',
         parameters=[
             robot_description,
-            {'use_sim_time': True}
+            {
+                'use_sim_time': True,
+                'publish_frequency': 60.0, 
+            }
         ],
         
     )
@@ -91,7 +94,9 @@ def generate_launch_description():
     bridge = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
-        arguments=['/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock'],
+        arguments=[
+            '/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock',
+            ],
         output='screen',
         parameters=[{'use_sim_time': True}]
         
@@ -110,8 +115,23 @@ def generate_launch_description():
         package='scara_sim',
         executable='trajectory_visualizer',
         output='screen',
-        parameters=[{'use_sim_time': True}]
+        parameters=[{
+            'use_sim_time': True,
+            'publish_frequency': 60.0, 
+        }]
         
+    )
+    
+    move_camera = ExecuteProcess(
+        cmd=[
+            'ign', 'service', '-s', '/gui/move_to/pose',
+            '--reqtype', 'ignition.msgs.GUICamera',
+            '--reptype', 'ignition.msgs.Boolean',
+            '--timeout', '2000',
+            '--req',
+            'pose: {position: {x: 0.0, y: 0.0, z: 0.7}, orientation: {x: 0.5, y: 0.5, z: -0.5, w: 0.5}}'
+        ],
+        output='screen'
     )
 
     return LaunchDescription([
@@ -135,5 +155,5 @@ def generate_launch_description():
                 on_exit=[effort_controller_spawner],
             )
         ),
-
+        TimerAction(period=5.0, actions=[move_camera]),
     ])

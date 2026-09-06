@@ -7,7 +7,9 @@ class TrajectoryVisualizer(Node):
     def __init__(self):
         super().__init__('trajectory_visualizer')
         self.publisher = self.create_publisher(Marker, '/trajectory_marker', 10)
-        self.timer = self.create_timer(1.0, self.publish_marker)  # публикуем раз в секунду (latching не используем)
+        self.declare_parameter('publish_frequency', 10.0)
+        self.publish_frequency = self.get_parameter('publish_frequency').value
+        self.timer = self.create_timer(1/self.publish_frequency, self.publish_marker)  # публикуем раз в секунду (latching не используем)
         self.publish_marker()  # сразу публикуем
 
     def publish_marker(self):
