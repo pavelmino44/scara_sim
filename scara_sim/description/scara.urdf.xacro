@@ -78,7 +78,7 @@
       <material name="blue"/>
     </visual>
     <collision>
-      <origin xyz="${L2/2} 0 0" rpy="0 0 0"/>
+      <origin xyz="${L2/2} 0 0" rpy="0 1.5708 0"/>
       <geometry>
         <cylinder radius="${radius}" length="${L2}"/>
       </geometry>

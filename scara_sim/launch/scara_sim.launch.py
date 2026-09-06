@@ -14,7 +14,7 @@ def generate_launch_description():
     world_file = os.path.join(pkg_scara_sim, 'worlds', 'empty.world')
     xacro_file = os.path.join(pkg_scara_sim, 'description', 'scara.urdf.xacro')
     controllers_yaml = os.path.join(pkg_scara_sim, 'config', 'scara_controllers.yaml')
-    rviz_config = os.path.join(pkg_scara_sim, 'config', 'scara.rviz')
+    rviz_config = os.path.join(pkg_scara_sim, 'rviz', 'scara.rviz')
 
     # Получаем URDF из xacro
     doc = xacro.parse(open(xacro_file))

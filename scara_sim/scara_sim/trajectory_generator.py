@@ -197,9 +197,9 @@ def generate_trajectory(segments: List[Segment], dt: float = 0.001) -> List[Traj
 def main():
     # Задание траектории: ломаная из 3 сегментов
     segments = [
-        Segment((-0.25, 0.0),  (-0.25, 0.25), 5),
+        Segment((-0.25, -0.25),  (-0.25, 0.25), 10),
         Segment((-0.25, 0.25), (0.25, 0.25),  10),
-        Segment((0.25, 0.25),  (0.25, 0.0), 5)
+        Segment((0.25, 0.25),  (0.25, -0.25), 10)
     ]
 
     dt = 0.001
