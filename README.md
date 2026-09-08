@@ -25,7 +25,7 @@ sudo apt install \
 ```bash
 mkdir -p some_ws/src
 cd some_ws/src
-git clone https://github.com/cyberbanana777/scara_sim
+git clone https://github.com/pavelmino44/scara_sim.git
 ```
 
 2. Build 
