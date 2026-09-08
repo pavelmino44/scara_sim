@@ -1,5 +1,5 @@
 ## Dependencies
-List of dependencies for ROS2 Humble:
+1. List of dependencies for ROS2 Humble:
 - ros-humble-xacro
 - ros-humble-ros-gz-sim
 - ros-humble-ros-gz-bridge
