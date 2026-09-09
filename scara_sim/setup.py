@@ -34,6 +34,8 @@ setup(
             'trajectory_generator = scara_sim.trajectory_generator:main',
             'effort_publisher = scara_sim.effort_publisher:main',
             'trajectory_visualizer = scara_sim.trajectory_visualizer:main',
+            'real_trajectory_visualizer = scara_sim.real_trajectory_visualizer:main',
+            'data_logger = scara_sim.data_logger:main',
         ],
     },
 )

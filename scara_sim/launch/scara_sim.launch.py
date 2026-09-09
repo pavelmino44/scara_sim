@@ -121,6 +121,13 @@ def generate_launch_description():
         }]
         
     )
+
+    real_trajectory_visualizer = Node(
+        package='scara_sim',
+        executable='real_trajectory_visualizer',
+        output='screen',
+        parameters=[{'use_sim_time': True}]  
+    )
     
     move_camera = ExecuteProcess(
         cmd=[
@@ -142,6 +149,7 @@ def generate_launch_description():
         spawn_robot,
         rviz,    
         trajectory_visualizer,
+        real_trajectory_visualizer,
         
         RegisterEventHandler(
             event_handler=OnProcessExit(

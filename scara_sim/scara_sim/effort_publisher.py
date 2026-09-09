@@ -1,5 +1,7 @@
-import csv
+#!/usr/bin/env python3
+
 import os
+import csv
 
 import numpy as np
 
@@ -7,7 +9,6 @@ import rclpy
 from rclpy.node import Node
 
 from std_msgs.msg import Float64MultiArray
-from sensor_msgs.msg import JointState
 
 from ament_index_python.packages import get_package_share_directory
 
@@ -21,6 +22,52 @@ class EffortPublisher(Node):
         )
 
         # ====================================================
+        # ПАРАМЕТРЫ
+        # ====================================================
+
+        self.control_dt = 0.001
+
+        # ====================================================
+        # ЗАГРУЗКА TRAJECTORY.CSV
+        # ====================================================
+
+        package_path = get_package_share_directory(
+            'scara_sim'
+        )
+
+        csv_path = os.path.join(
+            package_path,
+            'data',
+            'trajectory.csv'
+        )
+
+        self.get_logger().info(
+            f'Loading trajectory:\n{csv_path}'
+        )
+
+        self.data = self.load_csv(
+            csv_path
+        )
+
+        self.time = self.data[:, 0]
+
+        # tau1 / tau2 находятся
+        # в последних двух колонках
+        self.tau1 = self.data[:, -2]
+        self.tau2 = self.data[:, -1]
+
+        self.duration = self.time[-1]
+
+        self.get_logger().info(
+            f'Loaded {len(self.time)} points'
+        )
+
+        self.get_logger().info(
+            f'Trajectory duration: '
+            f'{self.duration:.3f} s'
+        )
+
+        # ====================================================
         # PUBLISHER
         # ====================================================
 
@@ -31,281 +78,161 @@ class EffortPublisher(Node):
         )
 
         # ====================================================
-        # SUBSCRIBER
-        # ====================================================
-
-        self.joint_state_subscriber = self.create_subscription(
-            JointState,
-            '/joint_states',
-            self.joint_state_callback,
-            10
-        )
-
-        # ====================================================
-        # ПАРАМЕТРЫ PD-КОНТРОЛЛЕРА
-        # ====================================================
-
-        # Начальные значения.
-        #
-        # Их потом можно подобрать экспериментально.
-        #
-        self.Kp = np.array([
-            80.0,
-            60.0
-        ])
-
-        self.Kd = np.array([
-            8.0,
-            6.0
-        ])
-
-        # Ограничение момента.
-        self.max_effort = 100.0
-
-        # ====================================================
-        # ЗАГРУЗКА ТРАЕКТОРИИ
-        # ====================================================
-
-        self.trajectory = self.load_trajectory()
-
-        self.trajectory_index = 0
-
-        # ====================================================
-        # СОСТОЯНИЕ РОБОТА
-        # ====================================================
-
-        self.current_q = None
-        self.current_q_dot = None
-
-        # ====================================================
-        # ВРЕМЯ
+        # ВРЕМЯ ЗАПУСКА
         # ====================================================
 
         self.start_time = None
 
-        # Управление с частотой 1000 Гц.
+        self.finished = False
+
+        # ====================================================
+        # TIMER
+        # ====================================================
+
         self.timer = self.create_timer(
-            0.001,
+            self.control_dt,
             self.control_callback
         )
 
         self.get_logger().info(
-            'Effort controller started.'
+            'Effort publisher started.'
         )
 
     # ========================================================
-    # ЗАГРУЗКА CSV
+    # CSV
     # ========================================================
 
-    def load_trajectory(self):
+    def load_csv(self, path):
 
-        package_dir = get_package_share_directory(
-            'scara_sim'
-        )
-
-        csv_path = os.path.join(
-            package_dir,
-            'data',
-            'trajectory.csv'
-        )
-
-        trajectory = []
+        rows = []
 
         with open(
-            csv_path,
+            path,
             'r'
         ) as file:
 
-            reader = csv.DictReader(file)
+            reader = csv.reader(file)
+
+            # header
+            next(reader)
 
             for row in reader:
 
-                trajectory.append({
-                    'time': float(row['time']),
+                rows.append([
+                    float(value)
+                    for value in row
+                ])
 
-                    'q1': float(row['q1']),
-                    'q2': float(row['q2']),
-
-                    'q1_dot': float(row['q1_dot']),
-                    'q2_dot': float(row['q2_dot']),
-
-                    'tau1': float(row['tau1_ff']),
-                    'tau2': float(row['tau2_ff'])
-                })
-
-        self.get_logger().info(
-            f'Loaded {len(trajectory)} trajectory points.'
-        )
-
-        return trajectory
-
-    # ========================================================
-    # JOINT STATES
-    # ========================================================
-
-    def joint_state_callback(
-        self,
-        msg: JointState
-    ):
-
-        try:
-
-            i1 = msg.name.index('joint1')
-            i2 = msg.name.index('joint2')
-
-            self.current_q = np.array([
-                msg.position[i1],
-                msg.position[i2]
-            ])
-
-            self.current_q_dot = np.array([
-                msg.velocity[i1],
-                msg.velocity[i2]
-            ])
-
-        except ValueError:
-
-            self.get_logger().warn(
-                'joint1 or joint2 not found in /joint_states'
+        if len(rows) == 0:
+            raise RuntimeError(
+                'Trajectory CSV is empty.'
             )
 
+        return np.array(
+            rows,
+            dtype=float
+        )
+
     # ========================================================
-    # ОСНОВНОЙ КОНТРОЛЛЕР
+    # INTERPOLATION
+    # ========================================================
+
+    def get_torque(self, t):
+
+        tau1 = np.interp(
+            t,
+            self.time,
+            self.tau1
+        )
+
+        tau2 = np.interp(
+            t,
+            self.time,
+            self.tau2
+        )
+
+        return tau1, tau2
+
+    # ========================================================
+    # CALLBACK
     # ========================================================
 
     def control_callback(self):
 
-        # Без состояния робота управление невозможно.
-        if self.current_q is None:
-            return
+        now = self.get_clock().now()
 
         if self.start_time is None:
 
-            self.start_time = (
-                self.get_clock().now()
-            )
+            self.start_time = now
 
-        # Текущее время движения.
-        elapsed = (
-            self.get_clock().now()
-            - self.start_time
-        ).nanoseconds / 1e9
-
-        # ====================================================
-        # ЗАВЕРШЕНИЕ ТРАЕКТОРИИ
-        # ====================================================
-
-        if (
-            self.trajectory_index
-            >= len(self.trajectory)
-        ):
-
-            self.publish_effort(
-                np.zeros(2)
+            self.get_logger().info(
+                'Trajectory execution started.'
             )
 
             return
 
-        # ====================================================
-        # ПОИСК АКТУАЛЬНОЙ ТОЧКИ
-        # ====================================================
-
-        # Двигаемся по CSV до тех пор,
-        # пока время точки меньше текущего времени.
-        while (
-            self.trajectory_index
-            < len(self.trajectory) - 1
-            and
-            self.trajectory[
-                self.trajectory_index + 1
-            ]['time'] <= elapsed
-        ):
-
-            self.trajectory_index += 1
-
-        point = self.trajectory[
-            self.trajectory_index
-        ]
+        elapsed = (
+            now - self.start_time
+        ).nanoseconds * 1e-9
 
         # ====================================================
-        # ЗАДАННЫЕ КООРДИНАТЫ
+        # КОНЕЦ ТРАЕКТОРИИ
         # ====================================================
 
-        q_desired = np.array([
-            point['q1'],
-            point['q2']
-        ])
+        if elapsed >= self.duration:
 
-        q_dot_desired = np.array([
-            point['q1_dot'],
-            point['q2_dot']
-        ])
+            if not self.finished:
 
-        tau_feedforward = np.array([
-            point['tau1'],
-            point['tau2']
-        ])
+                self.publish_torque(
+                    0.0,
+                    0.0
+                )
+
+                self.finished = True
+
+                self.get_logger().info(
+                    'Trajectory finished.'
+                )
+
+            return
 
         # ====================================================
-        # ОШИБКИ
+        # ПОЛУЧАЕМ МОМЕНТ
         # ====================================================
 
-        position_error = (
-            q_desired
-            - self.current_q
-        )
-
-        velocity_error = (
-            q_dot_desired
-            - self.current_q_dot
+        tau1, tau2 = self.get_torque(
+            elapsed
         )
 
         # ====================================================
-        # PD-КОРРЕКЦИЯ
+        # ПРЯМОЕ УПРАВЛЕНИЕ МОМЕНТАМИ
         # ====================================================
 
-        tau_feedback = (
-            self.Kp * position_error
-            +
-            self.Kd * velocity_error
+        self.publish_torque(
+            tau1,
+            tau2
         )
-
-        # ====================================================
-        # ОБЩИЙ МОМЕНТ
-        # ====================================================
-
-        tau = (
-            tau_feedforward
-            +
-            tau_feedback
-        )
-
-        # Защита от слишком больших моментов.
-        tau = np.clip(
-            tau,
-            -self.max_effort,
-            self.max_effort
-        )
-
-        self.publish_effort(tau)
 
     # ========================================================
-    # ПУБЛИКАЦИЯ МОМЕНТА
+    # PUBLISH
     # ========================================================
 
-    def publish_effort(
+    def publish_torque(
         self,
-        tau
+        tau1,
+        tau2
     ):
 
         msg = Float64MultiArray()
 
         msg.data = [
-            float(tau[0]),
-            float(tau[1])
+            float(tau1),
+            float(tau2)
         ]
 
-        self.publisher.publish(msg)
+        self.publisher.publish(
+            msg
+        )
 
 
 def main(args=None):
@@ -316,11 +243,23 @@ def main(args=None):
 
     node = EffortPublisher()
 
-    rclpy.spin(node)
+    try:
 
-    node.destroy_node()
+        rclpy.spin(node)
 
-    rclpy.shutdown()
+    except KeyboardInterrupt:
+        pass
+
+    finally:
+
+        node.publish_torque(
+            0.0,
+            0.0
+        )
+
+        node.destroy_node()
+
+        rclpy.shutdown()
 
 
 if __name__ == '__main__':
