@@ -1,140 +1,454 @@
 <?xml version="1.0"?>
+
 <robot name="scara" xmlns:xacro="http://www.ros.org/wiki/xacro">
-  <!-- Параметры -->
-  <xacro:property name="L1" value="0.35"/>
-  <xacro:property name="L2" value="0.25"/>
+
+  <!-- =========================================================
+       ПАРАМЕТРЫ SCARA
+       ========================================================= -->
+
+  <!-- Длины звеньев -->
+  <!--
+       Было:
+           L1 = 0.35 м
+           L2 = 0.25 м
+
+       Теперь:
+           L1 = 0.40 м
+           L2 = 0.30 м
+  -->
+  <xacro:property name="L1" value="0.40"/>
+  <xacro:property name="L2" value="0.30"/>
+
+  <!-- Радиус цилиндрических звеньев -->
   <xacro:property name="radius" value="0.025"/>
-  <xacro:property name="M1" value="1.924"/>
-  <xacro:property name="M2" value="1.374"/>
-  <xacro:property name="Ixx1" value="0.000601"/>
-  <xacro:property name="Iyy1" value="0.01994"/>
-  <xacro:property name="Izz1" value="0.01994"/>
-  <xacro:property name="Ixx2" value="0.000429"/>
-  <xacro:property name="Iyy2" value="0.00720"/>
-  <xacro:property name="Izz2" value="0.00720"/>
+
+
+  <!-- =========================================================
+       МАССЫ ЗВЕНЬЕВ
+       ========================================================= -->
+
+  <xacro:property name="M1" value="2.0"/>
+  <xacro:property name="M2" value="1.5"/>
+
+
+  <!-- =========================================================
+       МОМЕНТЫ ИНЕРЦИИ
+       
+       Звенья моделируются как однородные цилиндры,
+       продольная ось которых направлена вдоль X.
+
+       Для цилиндра:
+
+           Ixx = 1/2 * m * r^2
+
+           Iyy = Izz
+               = m/12 * (3*r^2 + L^2)
+
+       ========================================================= -->
+
+
+  <!-- Первое звено:
+       m1 = 2.0 кг
+       L1 = 0.40 м
+       r  = 0.025 м
+  -->
+
+  <xacro:property name="Ixx1" value="0.000625"/>
+  <xacro:property name="Iyy1" value="0.0269792"/>
+  <xacro:property name="Izz1" value="0.0269792"/>
+
+
+  <!-- Второе звено:
+       m2 = 1.5 кг
+       L2 = 0.30 м
+       r  = 0.025 м
+  -->
+
+  <xacro:property name="Ixx2" value="0.00046875"/>
+  <xacro:property name="Iyy2" value="0.0114844"/>
+  <xacro:property name="Izz2" value="0.0114844"/>
+
+
+  <!-- =========================================================
+       МАТЕРИАЛЫ
+       ========================================================= -->
 
   <xacro:include filename="$(find scara_sim)/description/materials.xacro"/>
 
+
+  <!-- =========================================================
+       BASE LINK
+       ========================================================= -->
+
   <link name="base_link">
+
     <inertial>
       <mass value="0.001"/>
-      <inertia ixx="0.000001" ixy="0" ixz="0" iyy="0.000001" iyz="0" izz="0.000001"/>
+
+      <inertia
+        ixx="0.000001"
+        ixy="0"
+        ixz="0"
+        iyy="0.000001"
+        iyz="0"
+        izz="0.000001"/>
     </inertial>
+
     <visual>
-      <geometry><box size="0.01 0.01 0.01"/></geometry>
+      <geometry>
+        <box size="0.01 0.01 0.01"/>
+      </geometry>
     </visual>
+
   </link>
+
+
+  <!-- =========================================================
+       JOINT 1
+       
+       Первое вращательное сочленение.
+       
+       Ось вращения:
+           Z
+
+       Это соответствует горизонтальной SCARA.
+       ========================================================= -->
 
   <joint name="joint1" type="continuous">
+
     <parent link="base_link"/>
     <child link="link1"/>
-    <origin xyz="0 0 0" rpy="0 0 0"/>
+
+    <!-- Первое звено начинается в начале координат -->
+    <origin
+      xyz="0 0 0"
+      rpy="0 0 0"/>
+
+    <!-- Вращение вокруг вертикальной оси Z -->
     <axis xyz="0 0 1"/>
-    <limit effort="1000000" velocity="100" lower="-3.14159" upper="3.14159"/>
-    <dynamics damping="0.1" friction="0.0"/>
+
+    <limit
+      effort="1000000"
+      velocity="100"
+      lower="-3.14159"
+      upper="3.14159"/>
+
+    <dynamics
+      damping="0.1"
+      friction="0.0"/>
+
   </joint>
+
+
+  <!-- =========================================================
+       LINK 1
+       
+       Первое звено:
+           длина = 0.40 м
+           масса = 2.0 кг
+       
+       Центр масс находится посередине:
+           L1 / 2 = 0.20 м
+       ========================================================= -->
 
   <link name="link1">
+
+    <!-- ========================
+         Инерциальные параметры
+         ======================== -->
+
     <inertial>
-      <origin xyz="${L1/2} 0 0" rpy="0 1.5708 0"/>
+
+      <!-- Центр масс первого звена -->
+      <origin
+        xyz="${L1/2} 0 0"
+        rpy="0 1.5708 0"/>
+
       <mass value="${M1}"/>
-      <inertia ixx="${Ixx1}" ixy="0" ixz="0" iyy="${Iyy1}" iyz="0" izz="${Izz1}"/>
+
+      <inertia
+        ixx="${Ixx1}"
+        ixy="0"
+        ixz="0"
+        iyy="${Iyy1}"
+        iyz="0"
+        izz="${Izz1}"/>
+
     </inertial>
+
+
+    <!-- ========================
+         Визуальная модель
+         ======================== -->
+
     <visual>
-      <origin xyz="${L1/2} 0 0" rpy="0 1.5708 0"/>
+
+      <!-- Центр цилиндра находится в середине звена -->
+      <origin
+        xyz="${L1/2} 0 0"
+        rpy="0 1.5708 0"/>
+
       <geometry>
-        <cylinder radius="${radius}" length="${L1}"/>
+        <cylinder
+          radius="${radius}"
+          length="${L1}"/>
       </geometry>
+
       <material name="grey"/>
+
     </visual>
+
+
+    <!-- ========================
+         Collision-модель
+         ======================== -->
+
     <collision>
-      <origin xyz="${L1/2} 0 0" rpy="0 1.5708 0"/>
+
+      <origin
+        xyz="${L1/2} 0 0"
+        rpy="0 1.5708 0"/>
+
       <geometry>
-        <cylinder radius="${radius}" length="${L1}"/>
+        <cylinder
+          radius="${radius}"
+          length="${L1}"/>
       </geometry>
+
     </collision>
+
   </link>
+
+
+  <!-- =========================================================
+       JOINT 2
+       
+       Второе сочленение находится на конце первого звена.
+       
+       Благодаря ${L1} его положение автоматически изменится
+       при изменении длины первого звена.
+       ========================================================= -->
 
   <joint name="joint2" type="continuous">
+
     <parent link="link1"/>
     <child link="link2"/>
-    <origin xyz="${L1} 0 ${radius*2}" rpy="0 0 0"/>
+
+    <!-- ========================
+        Второй шарнир расположен на расстоянии L1
+        от первого.
+        
+        radius*2 оставлен из исходной модели,
+        поэтому высота второго шарнира сохраняется.
+         ======================== -->
+    <origin
+      xyz="${L1} 0 ${radius*2}"
+      rpy="0 0 0"/>
+
+    <!-- Ось вращения второго шарнира -->
     <axis xyz="0 0 1"/>
-    <limit effort="1000000" velocity="100" lower="-3.14159" upper="3.14159"/>
-    <dynamics damping="0.1" friction="0.0"/>
+
+    <limit
+      effort="1000000"
+      velocity="100"
+      lower="-3.14159"
+      upper="3.14159"/>
+
+    <dynamics
+      damping="0.1"
+      friction="0.0"/>
+
   </joint>
+
+
+  <!-- =========================================================
+       LINK 2
+       
+       Второе звено:
+           длина = 0.30 м
+           масса = 1.5 кг
+       
+       Центр масс:
+           L2 / 2 = 0.15 м
+       ========================================================= -->
 
   <link name="link2">
+
+    <!-- ========================
+         Инерциальные параметры
+         ======================== -->
+
     <inertial>
-      <origin xyz="${L2/2} 0 0" rpy="0 1.5708 0"/>
+
+      <!-- Центр масс второго звена -->
+      <origin
+        xyz="${L2/2} 0 0"
+        rpy="0 1.5708 0"/>
+
       <mass value="${M2}"/>
-      <inertia ixx="${Ixx2}" ixy="0" ixz="0" iyy="${Iyy2}" iyz="0" izz="${Izz2}"/>
+
+      <inertia
+        ixx="${Ixx2}"
+        ixy="0"
+        ixz="0"
+        iyy="${Iyy2}"
+        iyz="0"
+        izz="${Izz2}"/>
+
     </inertial>
+
+
+    <!-- ========================
+         Визуальная модель
+         ======================== -->
+
     <visual>
-      <origin xyz="${L2/2} 0 0" rpy="0 1.5708 0"/>
+
+      <origin
+        xyz="${L2/2} 0 0"
+        rpy="0 1.5708 0"/>
+
       <geometry>
-        <cylinder radius="${radius}" length="${L2}"/>
+        <cylinder
+          radius="${radius}"
+          length="${L2}"/>
       </geometry>
+
       <material name="blue"/>
+
     </visual>
+
+
+    <!-- ========================
+         Collision-модель
+         ======================== -->
+
     <collision>
-      <origin xyz="${L2/2} 0 0" rpy="0 1.5708 0"/>
+
+      <origin
+        xyz="${L2/2} 0 0"
+        rpy="0 1.5708 0"/>
+
       <geometry>
-        <cylinder radius="${radius}" length="${L2}"/>
+        <cylinder
+          radius="${radius}"
+          length="${L2}"/>
       </geometry>
+
     </collision>
+
   </link>
 
-  <!-- Инструментальная точка -->
+
+  <!-- =========================================================
+       TOOL0
+       
+       Инструментальная точка находится на самом конце
+       второго звена.
+       ========================================================= -->
+
   <link name="tool0"/>
+
   <joint name="tool_joint" type="fixed">
+
     <parent link="link2"/>
     <child link="tool0"/>
-    <origin xyz="${L2} 0 0" rpy="0 0 0"/>
+
+    <!-- Конец второго звена -->
+    <origin
+      xyz="${L2} 0 0"
+      rpy="0 0 0"/>
+
   </joint>
+
+
+  <!-- =========================================================
+       WORLD
+       
+       Фиксированная мировая система координат.
+       ========================================================= -->
 
   <link name="world"/>
 
+
   <joint name="world_to_base" type="fixed">
+
     <parent link="world"/>
     <child link="base_link"/>
-    <origin xyz="0 0 0.1" rpy="0 0 0"/>
+
+    <!-- Высота основания над землёй -->
+    <origin
+      xyz="0 0 0.1"
+      rpy="0 0 0"/>
+
   </joint>
 
 
-  <!-- Plugin for Ignition Gazebo (gz_ros2_control) -->
+  <!-- =========================================================
+       GAZEBO / ROS 2 CONTROL
+       ========================================================= -->
+
   <gazebo>
-    <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
-      <parameters>$(find scara_sim)/config/scara_controllers.yaml</parameters>
+
+    <plugin
+      filename="gz_ros2_control-system"
+      name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+
+      <parameters>
+        $(find scara_sim)/config/scara_controllers.yaml
+      </parameters>
+
     </plugin>
+
   </gazebo>
 
-  <ros2_control name="GazeboSimSystem" type="system">
-    <hardware>
-      <plugin>gz_ros2_control/GazeboSimSystem</plugin>
-    </hardware>
-    <joint name="joint1">
-      <command_interface name="effort">
-        <param name="min">-1000</param>
-        <param name="max">1000</param>
-      </command_interface>
-      <state_interface name="position">
-        <param name="initial_value">-3.0826809323106694</param> <!-- q1_start в радианах -->
-      </state_interface>
-      <state_interface name="velocity"/>
-      <state_interface name="effort"/>
-    </joint>
-    <joint name="joint2">
-      <command_interface name="effort">
-        <param name="min">-1000</param>
-        <param name="max">1000</param>
-      </command_interface>
-      <state_interface name="position">
-        <param name="initial_value">1.920753038037959</param> <!-- q2_start в радианах -->
-      </state_interface>
-      <state_interface name="velocity"/>
-      <state_interface name="effort"/>
-    </joint>
-  </ros2_control>
+
+  <!-- =========================================================
+       ROS 2 CONTROL
+       
+       Для каждого сочленения используется effort interface.
+       
+       То есть контроллер получает непосредственно момент:
+       
+           joint1 -> tau1
+           joint2 -> tau2
+       
+       ========================================================= -->
+
+<ros2_control name="GazeboSimSystem" type="system">
+
+  <hardware>
+    <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+  </hardware>
+
+  <joint name="joint1">
+    <command_interface name="effort">
+      <param name="min">-1000</param>
+      <param name="max">1000</param>
+    </command_interface>
+
+    <state_interface name="position">
+      <param name="initial_value">3.11689511</param>
+    </state_interface>
+
+    <state_interface name="velocity"/>
+    <state_interface name="effort"/>
+  </joint>
+
+  <joint name="joint2">
+    <command_interface name="effort">
+      <param name="min">-1000</param>
+      <param name="max">1000</param>
+    </command_interface>
+
+    <state_interface name="position">
+      <param name="initial_value">2.11862318</param>
+    </state_interface>
+
+    <state_interface name="velocity"/>
+    <state_interface name="effort"/>
+  </joint>
+
+</ros2_control>
 
 </robot>

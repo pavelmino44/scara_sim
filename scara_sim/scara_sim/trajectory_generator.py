@@ -1,284 +1,804 @@
-import numpy as np
-import matplotlib.pyplot as plt
+import csv
+import os
 from dataclasses import dataclass
 from typing import List, Tuple
-import csv
+
+import numpy as np
+import matplotlib.pyplot as plt
+
 from ament_index_python.packages import get_package_share_directory
-import os
-    
 
-# ------------------------- Параметры робота -------------------------
-L1 = 0.35          # м
-L2 = 0.25          # м
-rho = 2800.0       # кг/м³
-d = 0.05           # м
-m1 = rho * np.pi * (d/2)**2 * L1   # ≈ 1.924 кг
-m2 = rho * np.pi * (d/2)**2 * L2   # ≈ 1.374 кг
-l1 = L1/2
-l2 = L2/2
-I1zz = (1/12) * m1 * (3*(d/2)**2 + L1**2)
-I2zz = (1/12) * m2 * (3*(d/2)**2 + L2**2)
-b1 = b2 = 0.1      # вязкое трение
 
-# ------------------------- Dataclasses -------------------------
+# ============================================================
+# ПАРАМЕТРЫ РОБОТА
+# ============================================================
+
+# Длины звеньев.
+# Они должны полностью совпадать с scara.urdf.xacro.
+L1 = 0.40  # м
+L2 = 0.30  # м
+
+# Радиус цилиндрических звеньев.
+radius = 0.025  # м
+
+# Массы.
+m1 = 2.0  # кг
+m2 = 1.5  # кг
+
+# Расстояние от шарнира до центра масс.
+l1 = L1 / 2.0
+l2 = L2 / 2.0
+
+# Моменты инерции относительно оси Z.
+#
+# Для цилиндра:
+#
+# Izz = m/12 * (3*r^2 + L^2)
+#
+I1zz = (1.0 / 12.0) * m1 * (3.0 * radius**2 + L1**2)
+I2zz = (1.0 / 12.0) * m2 * (3.0 * radius**2 + L2**2)
+
+# Вязкое трение в шарнирах.
+b1 = 0.1
+b2 = 0.1
+
+
+# ============================================================
+# ПАРАМЕТРЫ ТРАЕКТОРИИ
+# ============================================================
+
+# Скорость движения TCP.
+# 5 см/с = 0.05 м/с.
+CARTESIAN_SPEED = 0.05
+
+# Шаг вычисления траектории.
+#
+# В исходном задании Δt = 1 сек.
+# Здесь 1 секунда остаётся характерным шагом задания,
+# однако для физического управления Gazebo нам нужна
+# значительно более частая дискретизация.
+#
+# Поэтому рассчитываем траекторию с частотой 1000 Гц.
+DT = 0.001
+
+
+# ============================================================
+# СТРУКТУРЫ ДАННЫХ
+# ============================================================
+
 @dataclass
 class TrajectoryPoint:
-    t: float               # время от начала движения, с
-    x: float               # декартовы координаты конца второго звена
+    t: float
+
+    x: float
     y: float
-    q1: float              # обобщённые координаты
+
+    q1: float
     q2: float
-    q1_dot: float          # скорости
+
+    q1_dot: float
     q2_dot: float
-    q1_ddot: float         # ускорения
+
+    q1_ddot: float
     q2_ddot: float
-    tau1: float            # моменты в сочленениях
+
+    tau1: float
     tau2: float
+
 
 @dataclass
 class Segment:
-    start: Tuple[float, float]   # начальная точка (x, y)
-    end: Tuple[float, float]     # конечная точка (x, y)
-    duration: float              # время движения по сегменту, с
+    start: Tuple[float, float]
+    end: Tuple[float, float]
 
-# ------------------------- Функции IK и динамики -------------------------
-def ik(x: float, y: float, q_prev: Tuple[float, float]) -> Tuple[float, float]:
-    """Аналитическое решение обратной кинематики с выбором ветви по непрерывности."""
-    D = (x**2 + y**2 - L1**2 - L2**2) / (2 * L1 * L2)
+
+# ============================================================
+# ОБРАТНАЯ КИНЕМАТИКА
+# ============================================================
+
+def ik(
+    x: float,
+    y: float,
+    q_prev: Tuple[float, float]
+) -> Tuple[float, float]:
+    """
+    Обратная кинематика плоского двухзвенного SCARA.
+
+    Используется классическое аналитическое решение:
+
+        cos(q2) =
+            (x² + y² - L1² - L2²) / (2 L1 L2)
+
+    Затем:
+
+        q1 =
+            atan2(y, x)
+            -
+            atan2(L2 sin(q2),
+                  L1 + L2 cos(q2))
+
+    Из двух возможных конфигураций выбирается та,
+    которая ближе к предыдущему положению.
+    """
+
+    D = (
+        x**2 + y**2
+        - L1**2
+        - L2**2
+    ) / (2.0 * L1 * L2)
+
+    # Из-за ошибок округления D иногда может оказаться
+    # чуть меньше -1 или чуть больше 1.
     D = np.clip(D, -1.0, 1.0)
+
+    # Две кинематические конфигурации:
+    # "локоть вверх" и "локоть вниз".
     q2_candidates = [
-        np.arctan2(np.sqrt(1 - D**2), D),
-        np.arctan2(-np.sqrt(1 - D**2), D)
+        np.arctan2(np.sqrt(1.0 - D**2), D),
+        np.arctan2(-np.sqrt(1.0 - D**2), D)
     ]
-    # Выбираем кандидата, ближайшего к предыдущему q2
-    q2_new = min(q2_candidates, key=lambda q: abs(q - q_prev[1]))
-    q1_new = np.arctan2(y, x) - np.arctan2(L2 * np.sin(q2_new), L1 + L2 * np.cos(q2_new))
-    return q1_new, q2_new
 
-def compute_dynamics(q1: float, q2: float, q1_dot: float, q2_dot: float,
-                     q1_ddot: float, q2_ddot: float) -> Tuple[float, float]:
-    """Вычисление моментов по уравнению обратной динамики (без импульсов)."""
-    M11 = I1zz + I2zz + m1*l1**2 + m2*(L1**2 + l2**2 + 2*L1*l2*np.cos(q2))
-    M12 = I2zz + m2*(l2**2 + L1*l2*np.cos(q2))
-    M22 = I2zz + m2*l2**2
+    # Выбираем ветвь, которая обеспечивает
+    # наиболее плавное изменение q2.
+    q2 = min(
+        q2_candidates,
+        key=lambda value: abs(value - q_prev[1])
+    )
 
-    c11 = -m2 * L1 * l2 * np.sin(q2) * q2_dot
-    c12 = -m2 * L1 * l2 * np.sin(q2) * (q1_dot + q2_dot)
-    c21 = m2 * L1 * l2 * np.sin(q2) * q1_dot
-    c22 = 0.0
+    q1 = (
+        np.arctan2(y, x)
+        -
+        np.arctan2(
+            L2 * np.sin(q2),
+            L1 + L2 * np.cos(q2)
+        )
+    )
 
-    tau1 = M11*q1_ddot + M12*q2_ddot + c11*q1_dot + c12*q2_dot + b1*q1_dot
-    tau2 = M12*q1_ddot + M22*q2_ddot + c21*q1_dot + c22*q2_dot + b2*q2_dot
-    return tau1, tau2
+    return q1, q2
 
-def generate_trajectory(segments: List[Segment], dt: float = 0.001) -> List[TrajectoryPoint]:
+
+# ============================================================
+# ЯКОБИАН
+# ============================================================
+
+def jacobian(q1: float, q2: float) -> np.ndarray:
     """
-    Генерация точек траектории с расчётом кинематики и динамики,
-    включая импульсные моменты на стыках сегментов, в начале и в конце.
+    Якобиан SCARA:
+
+        [x_dot]   [J11 J12] [q1_dot]
+        [y_dot] = [J21 J22] [q2_dot]
     """
-    points: List[TrajectoryPoint] = []
-    current_t = 0.0
 
-    # Начальные значения: предполагаем, что робот уже находится в начале первого сегмента
-    start_x, start_y = segments[0].start
-    q1, q2 = ik(start_x, start_y, (0.0, 0.0))  # начальное приближение
-    q1_dot = q2_dot = 0.0
-    # Переменные для хранения скоростей в конце предыдущего шага (для импульсов)
-    q1_dot_old = 0.0
-    q2_dot_old = 0.0
+    s1 = np.sin(q1)
+    c1 = np.cos(q1)
 
-    # Для каждого сегмента
-    for seg_idx, seg in enumerate(segments):
-        x_start, y_start = seg.start
-        x_end, y_end = seg.end
-        T = seg.duration
-        L = np.hypot(x_end - x_start, y_end - y_start)
-        v = L / T if T > 0 else 0.0
-        # Единичный вектор направления
-        if L > 1e-12:
-            ux = (x_end - x_start) / L
-            uy = (y_end - y_start) / L
-        else:
-            ux = uy = 0.0
+    s12 = np.sin(q1 + q2)
+    c12 = np.cos(q1 + q2)
 
-        # Вектор декартовой скорости на сегменте
-        xdot = v * ux
-        ydot = v * uy
+    return np.array([
+        [
+            -L1 * s1 - L2 * s12,
+            -L2 * s12
+        ],
+        [
+            L1 * c1 + L2 * c12,
+            L2 * c12
+        ]
+    ])
 
-        # Число шагов на сегменте
-        n_steps = max(1, int(round(T / dt)))
-        t_seg = np.linspace(0, T, n_steps + 1)  # включая конечную точку
 
-        for i, tau in enumerate(t_seg):
-            t_abs = current_t + tau
-            # Координаты в данный момент
-            x = x_start + xdot * tau
-            y = y_start + ydot * tau
+# ============================================================
+# МАТРИЦА ИНЕРЦИИ M(q)
+# ============================================================
 
-            # IK
-            q_prev = (q1, q2)
-            q1, q2 = ik(x, y, q_prev)
+def mass_matrix(q2: float) -> np.ndarray:
+    """
+    Матрица инерции манипулятора.
 
-            # Якобиан и его производная
-            s1, c1 = np.sin(q1), np.cos(q1)
-            s12, c12 = np.sin(q1+q2), np.cos(q1+q2)
-            J = np.array([
-                [-L1*s1 - L2*s12, -L2*s12],
-                [ L1*c1 + L2*c12,  L2*c12]
+        M(q) =
+            [M11 M12]
+            [M12 M22]
+    """
+
+    cos_q2 = np.cos(q2)
+
+    M11 = (
+        I1zz
+        + I2zz
+        + m1 * l1**2
+        + m2 * (
+            L1**2
+            + l2**2
+            + 2.0 * L1 * l2 * cos_q2
+        )
+    )
+
+    M12 = (
+        I2zz
+        + m2 * (
+            l2**2
+            + L1 * l2 * cos_q2
+        )
+    )
+
+    M22 = (
+        I2zz
+        + m2 * l2**2
+    )
+
+    return np.array([
+        [M11, M12],
+        [M12, M22]
+    ])
+
+
+# ============================================================
+# КОРИОЛИСОВЫЕ / ЦЕНТРОБЕЖНЫЕ ЧЛЕНЫ
+# ============================================================
+
+def coriolis_vector(
+    q2: float,
+    q1_dot: float,
+    q2_dot: float
+) -> np.ndarray:
+    """
+    Возвращает вектор C(q, q_dot) q_dot.
+
+    Для нашего манипулятора:
+
+        h = m2 L1 l2 sin(q2)
+
+        c1 =
+            -h * (2 q1_dot q2_dot + q2_dot²)
+
+        c2 =
+             h * q1_dot²
+    """
+
+    h = m2 * L1 * l2 * np.sin(q2)
+
+    c1 = -h * (
+        2.0 * q1_dot * q2_dot
+        + q2_dot**2
+    )
+
+    c2 = h * q1_dot**2
+
+    return np.array([c1, c2])
+
+
+# ============================================================
+# ОБРАТНАЯ ДИНАМИКА
+# ============================================================
+
+def compute_dynamics(
+    q1: float,
+    q2: float,
+    q1_dot: float,
+    q2_dot: float,
+    q1_ddot: float,
+    q2_ddot: float
+) -> Tuple[float, float]:
+    """
+    Вычисляет необходимые моменты:
+
+        τ = M(q) q̈
+            + C(q,q̇)q̇
+            + B q̇
+
+    Так как наша SCARA-модель работает в горизонтальной
+    плоскости, гравитационный момент относительно
+    вертикальных осей Z отсутствует.
+    """
+
+    M = mass_matrix(q2)
+
+    C = coriolis_vector(
+        q2,
+        q1_dot,
+        q2_dot
+    )
+
+    B = np.array([
+        b1 * q1_dot,
+        b2 * q2_dot
+    ])
+
+    q_ddot = np.array([
+        q1_ddot,
+        q2_ddot
+    ])
+
+    tau = M @ q_ddot + C + B
+
+    return tau[0], tau[1]
+
+
+# ============================================================
+# ГЕНЕРАЦИЯ ТРАЕКТОРИИ
+# ============================================================
+
+def generate_trajectory(
+    segments: List[Segment],
+    dt: float = DT
+) -> List[TrajectoryPoint]:
+    """
+    Генерирует траекторию движения TCP.
+
+    На каждом прямолинейном участке:
+
+        x(t) = x0 + vx*t
+        y(t) = y0 + vy*t
+
+    Скорость TCP постоянна и равна 0.05 м/с.
+
+    После получения x,y выполняется обратная кинематика,
+    затем вычисляются q_dot и q_ddot через Якобиан.
+    """
+
+    points = []
+
+    # Начальная точка траектории.
+    x0, y0 = segments[0].start
+
+    # Начальная конфигурация.
+    q1, q2 = ik(
+        x0,
+        y0,
+        (0.0, 0.0)
+    )
+
+    current_time = 0.0
+
+    for segment_index, segment in enumerate(segments):
+
+        x_start, y_start = segment.start
+        x_end, y_end = segment.end
+
+        dx = x_end - x_start
+        dy = y_end - y_start
+
+        # Длина сегмента.
+        length = np.hypot(dx, dy)
+
+        # Время движения по сегменту:
+        #
+        # T = S / V
+        #
+        duration = length / CARTESIAN_SPEED
+
+        # Единичный вектор направления.
+        ux = dx / length
+        uy = dy / length
+
+        # Постоянная декартова скорость.
+        x_dot = CARTESIAN_SPEED * ux
+        y_dot = CARTESIAN_SPEED * uy
+
+        # Количество шагов.
+        n_steps = int(round(duration / dt))
+
+        for i in range(n_steps):
+
+            # Не дублируем первую точку последующих сегментов.
+            if segment_index > 0 and i == 0:
+                continue
+
+            local_t = i * dt
+
+            # Не допускаем выхода за пределы сегмента.
+            local_t = min(local_t, duration)
+
+            # Положение TCP.
+            x = x_start + x_dot * local_t
+            y = y_start + y_dot * local_t
+
+            # Обратная кинематика.
+            q1, q2 = ik(
+                x,
+                y,
+                (q1, q2)
+            )
+
+            # Якобиан.
+            J = jacobian(q1, q2)
+
+            xy_dot = np.array([
+                x_dot,
+                y_dot
             ])
-            # Скорости в суставах
-            xy_dot = np.array([xdot, ydot])
-            q_dot = np.linalg.solve(J, xy_dot)
-            q1_dot_new, q2_dot_new = q_dot
 
-            # Ускорение в суставах (для постоянной декартовой скорости)
+            # q_dot = J^-1 * x_dot
+            q_dot = np.linalg.solve(
+                J,
+                xy_dot
+            )
+
+            q1_dot = q_dot[0]
+            q2_dot = q_dot[1]
+
+            # Производная Якобиана.
+            s1 = np.sin(q1)
+            c1 = np.cos(q1)
+
+            s12 = np.sin(q1 + q2)
+            c12 = np.cos(q1 + q2)
+
             dJ = np.array([
-                [-L1*c1*q1_dot_new - L2*c12*(q1_dot_new+q2_dot_new),
-                 -L2*c12*(q1_dot_new+q2_dot_new)],
-                [-L1*s1*q1_dot_new - L2*s12*(q1_dot_new+q2_dot_new),
-                 -L2*s12*(q1_dot_new+q2_dot_new)]
+                [
+                    -L1 * c1 * q1_dot
+                    - L2 * c12 * (q1_dot + q2_dot),
+
+                    -L2 * c12 * (q1_dot + q2_dot)
+                ],
+
+                [
+                    -L1 * s1 * q1_dot
+                    - L2 * s12 * (q1_dot + q2_dot),
+
+                    -L2 * s12 * (q1_dot + q2_dot)
+                ]
             ])
-            q_ddot = -np.linalg.solve(J, dJ @ q_dot)
-            q1_ddot, q2_ddot = q_ddot
 
-            # Обработка импульсного момента на стыке сегментов (включая первый сегмент)
-            if i == 0:  # начало любого сегмента
-                delta_q_dot = np.array([q1_dot_new - q1_dot_old,
-                                        q2_dot_new - q2_dot_old])
-                # Матрица инерции для текущей конфигурации
-                M11 = I1zz + I2zz + m1*l1**2 + m2*(L1**2 + l2**2 + 2*L1*l2*np.cos(q2))
-                M12 = I2zz + m2*(l2**2 + L1*l2*np.cos(q2))
-                M22 = I2zz + m2*l2**2
-                M = np.array([[M11, M12], [M12, M22]])
-                impulse = M @ delta_q_dot
-                tau_imp = impulse / dt
-                # Заменяем моменты на импульсные
-                tau1, tau2 = tau_imp[0], tau_imp[1]
-            else:
-                # Обычный расчёт моментов
-                tau1, tau2 = compute_dynamics(q1, q2, q1_dot_new, q2_dot_new,
-                                             q1_ddot, q2_ddot)
+            # Так как x_ddot = y_ddot = 0:
+            #
+            # J q_ddot + J_dot q_dot = 0
+            #
+            # q_ddot = -J^-1 J_dot q_dot
+            q_ddot = -np.linalg.solve(
+                J,
+                dJ @ q_dot
+            )
 
-            # Сохраняем точку
-            points.append(TrajectoryPoint(
-                t=t_abs,
-                x=x, y=y,
-                q1=q1, q2=q2,
-                q1_dot=q1_dot_new, q2_dot=q2_dot_new,
-                q1_ddot=q1_ddot, q2_ddot=q2_ddot,
-                tau1=tau1, tau2=tau2
-            ))
+            q1_ddot = q_ddot[0]
+            q2_ddot = q_ddot[1]
 
-            # Обновляем сохранённые скорости для следующего шага
-            q1_dot_old = q1_dot_new
-            q2_dot_old = q2_dot_new
-            q1_dot, q2_dot = q1_dot_new, q2_dot_new
+            # Обратная динамика.
+            tau1, tau2 = compute_dynamics(
+                q1,
+                q2,
+                q1_dot,
+                q2_dot,
+                q1_ddot,
+                q2_ddot
+            )
 
-        # Переход к следующему сегменту
-        current_t += T
+            points.append(
+                TrajectoryPoint(
+                    t=current_time + local_t,
 
-    # Добавляем конечный импульс (остановка)
-    if points:
-        last = points[-1]
-        delta_q_dot = np.array([-last.q1_dot, -last.q2_dot])
-        M11 = I1zz + I2zz + m1*l1**2 + m2*(L1**2 + l2**2 + 2*L1*l2*np.cos(last.q2))
-        M12 = I2zz + m2*(l2**2 + L1*l2*np.cos(last.q2))
-        M22 = I2zz + m2*l2**2
-        M = np.array([[M11, M12], [M12, M22]])
-        impulse = M @ delta_q_dot
-        tau_imp = impulse / dt
-        last.tau1 = tau_imp[0]
-        last.tau2 = tau_imp[1]
+                    x=x,
+                    y=y,
 
-        # Дополнительная точка с нулевыми моментами
-        zero_point = TrajectoryPoint(
-            t=last.t + dt,
-            x=last.x,
-            y=last.y,
-            q1=last.q1,
-            q2=last.q2,
+                    q1=q1,
+                    q2=q2,
+
+                    q1_dot=q1_dot,
+                    q2_dot=q2_dot,
+
+                    q1_ddot=q1_ddot,
+                    q2_ddot=q2_ddot,
+
+                    tau1=tau1,
+                    tau2=tau2
+                )
+            )
+
+        current_time += duration
+
+    # ========================================================
+    # КОНЕЧНАЯ ТОЧКА
+    # ========================================================
+
+    # Добавляем последнюю точку траектории явно.
+    last_x, last_y = segments[-1].end
+
+    q1_final, q2_final = ik(
+        last_x,
+        last_y,
+        (q1, q2)
+    )
+
+    points.append(
+        TrajectoryPoint(
+            t=current_time,
+
+            x=last_x,
+            y=last_y,
+
+            q1=q1_final,
+            q2=q2_final,
+
             q1_dot=0.0,
             q2_dot=0.0,
+
             q1_ddot=0.0,
             q2_ddot=0.0,
+
             tau1=0.0,
             tau2=0.0
         )
-        points.append(zero_point)
+    )
 
     return points
 
-# ------------------------- Основная программа -------------------------
+
+# ============================================================
+# СОХРАНЕНИЕ CSV
+# ============================================================
+
+def save_data(points: List[TrajectoryPoint]):
+
+    package_dir = get_package_share_directory(
+        'scara_sim'
+    )
+
+    data_dir = os.path.join(
+        package_dir,
+        'data'
+    )
+
+    os.makedirs(
+        data_dir,
+        exist_ok=True
+    )
+
+    # --------------------------------------------------------
+    # Полная траектория
+    # --------------------------------------------------------
+
+    trajectory_path = os.path.join(
+        data_dir,
+        'trajectory.csv'
+    )
+
+    with open(
+        trajectory_path,
+        'w',
+        newline=''
+    ) as file:
+
+        writer = csv.writer(file)
+
+        writer.writerow([
+            'time',
+            'x',
+            'y',
+            'q1',
+            'q2',
+            'q1_dot',
+            'q2_dot',
+            'q1_ddot',
+            'q2_ddot',
+            'tau1_ff',
+            'tau2_ff'
+        ])
+
+        for p in points:
+
+            writer.writerow([
+                p.t,
+                p.x,
+                p.y,
+                p.q1,
+                p.q2,
+                p.q1_dot,
+                p.q2_dot,
+                p.q1_ddot,
+                p.q2_ddot,
+                p.tau1,
+                p.tau2
+            ])
+
+    # --------------------------------------------------------
+    # Отдельный файл моментов
+    # --------------------------------------------------------
+
+    moments_path = os.path.join(
+        data_dir,
+        'moments.csv'
+    )
+
+    with open(
+        moments_path,
+        'w',
+        newline=''
+    ) as file:
+
+        writer = csv.writer(file)
+
+        writer.writerow([
+            'time',
+            'tau1',
+            'tau2'
+        ])
+
+        for p in points:
+
+            writer.writerow([
+                p.t,
+                p.tau1,
+                p.tau2
+            ])
+
+    print(
+        f'Trajectory saved to: {trajectory_path}'
+    )
+
+    print(
+        f'Moments saved to: {moments_path}'
+    )
+
+
+# ============================================================
+# ОСНОВНАЯ ПРОГРАММА
+# ============================================================
+
 def main():
-    # Задание траектории: ломаная из 3 сегментов
+
+    # ========================================================
+    # БУКВА П
+    # ========================================================
+    #
+    # Каждая сторона = 0.5 м.
+    #
+    # Начальная точка:
+    #
+    # (-0.25, -0.25)
+    #
+    # Робот движется:
+    #
+    # вверх → вправо → вниз
+    #
+    # Скорость = 0.05 м/с.
+    #
+    # Поэтому каждый участок длиной 0.5 м
+    # занимает:
+    #
+    # 0.5 / 0.05 = 10 секунд.
+    #
+    # Вся траектория:
+    #
+    # 30 секунд.
+    # ========================================================
+
     segments = [
-        Segment((-0.25, -0.25),  (-0.25, 0.25), 10),
-        Segment((-0.25, 0.25), (0.25, 0.25),  10),
-        Segment((0.25, 0.25),  (0.25, -0.25), 10)
+
+        Segment(
+            start=(-0.25, -0.25),
+            end=(-0.25, 0.25)
+        ),
+
+        Segment(
+            start=(-0.25, 0.25),
+            end=(0.25, 0.25)
+        ),
+
+        Segment(
+            start=(0.25, 0.25),
+            end=(0.25, -0.25)
+        )
     ]
 
-    dt = 0.001
-    points = generate_trajectory(segments, dt)
+    points = generate_trajectory(
+        segments,
+        DT
+    )
 
-    # Извлекаем данные для графиков
-    time = [p.t for p in points]
-    q1 = [p.q1 for p in points]
-    q2 = [p.q2 for p in points]
-    tau1 = [p.tau1 for p in points]
-    tau2 = [p.tau2 for p in points]
-    
-    print(f'{q1[0]=}, {q2[0]=} ')
-    
-    
-    
-    pkg_scara_sim = get_package_share_directory('scara_sim')
-    data_dir = os.path.join(pkg_scara_sim, 'data')
-    os.makedirs(data_dir, exist_ok=True)
-    file_path = os.path.join(data_dir, 'moments.csv')
+    save_data(points)
 
-    with open(file_path, 'w', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(['time', 'tau1', 'tau2'])
-        for p in points:
-            writer.writerow([p.t, p.tau1, p.tau2])
-    print(f"CSV saved to {file_path}")
+    # ========================================================
+    # ПРОВЕРКА НАЧАЛЬНОЙ КОНФИГУРАЦИИ
+    # ========================================================
 
-    # Построение графиков с логарифмической шкалой для моментов
-    plt.figure(figsize=(12, 10))
+    first = points[0]
 
-    plt.subplot(2, 2, 1)
+    print()
+    print('Initial configuration:')
+    print(f'q1(0) = {first.q1:.10f} rad')
+    print(f'q2(0) = {first.q2:.10f} rad')
+
+    print()
+    print('Robot parameters:')
+    print(f'L1 = {L1} m')
+    print(f'L2 = {L2} m')
+    print(f'm1 = {m1} kg')
+    print(f'm2 = {m2} kg')
+    print(f'I1zz = {I1zz:.8f} kg*m^2')
+    print(f'I2zz = {I2zz:.8f} kg*m^2')
+
+    # ========================================================
+    # ГРАФИКИ
+    # ========================================================
+
+    time = np.array([p.t for p in points])
+
+    q1 = np.array([p.q1 for p in points])
+    q2 = np.array([p.q2 for p in points])
+
+    tau1 = np.array([p.tau1 for p in points])
+    tau2 = np.array([p.tau2 for p in points])
+
+    x = np.array([p.x for p in points])
+    y = np.array([p.y for p in points])
+
+    # --------------------------------------------------------
+    # Декартова траектория
+    # --------------------------------------------------------
+
+    plt.figure(figsize=(7, 7))
+
+    plt.plot(x, y)
+
+    plt.xlabel('X, м')
+    plt.ylabel('Y, м')
+
+    plt.title('П-образная траектория TCP')
+
+    plt.axis('equal')
+    plt.grid(True)
+
+    # --------------------------------------------------------
+    # q1
+    # --------------------------------------------------------
+
+    plt.figure(figsize=(10, 5))
+
     plt.plot(time, q1)
+
     plt.xlabel('Время, с')
     plt.ylabel('q1, рад')
+
     plt.title('Обобщённая координата q1')
+
     plt.grid(True)
 
-    plt.subplot(2, 2, 2)
+    # --------------------------------------------------------
+    # q2
+    # --------------------------------------------------------
+
+    plt.figure(figsize=(10, 5))
+
     plt.plot(time, q2)
+
     plt.xlabel('Время, с')
     plt.ylabel('q2, рад')
+
     plt.title('Обобщённая координата q2')
+
     plt.grid(True)
 
-    plt.subplot(2, 2, 3)
+    # --------------------------------------------------------
+    # Момент первого двигателя
+    # --------------------------------------------------------
+
+    plt.figure(figsize=(10, 5))
+
     plt.plot(time, tau1)
-    plt.yscale('symlog', linthresh=1e-3)
-    plt.xlabel('Время, с')
-    plt.ylabel('τ1, Н·м (симлог)')
-    plt.title('Момент в сочленении 1')
-    plt.grid(True, which='both')
 
-    plt.subplot(2, 2, 4)
+    plt.xlabel('Время, с')
+    plt.ylabel('τ1, Н·м')
+
+    plt.title('Расчётный момент τ1')
+
+    plt.grid(True)
+
+    # --------------------------------------------------------
+    # Момент второго двигателя
+    # --------------------------------------------------------
+
+    plt.figure(figsize=(10, 5))
+
     plt.plot(time, tau2)
-    plt.yscale('symlog', linthresh=1e-3)
+
     plt.xlabel('Время, с')
-    plt.ylabel('τ2, Н·м (симлог)')
-    plt.title('Момент в сочленении 2')
-    plt.grid(True, which='both')
+    plt.ylabel('τ2, Н·м')
 
-    plt.tight_layout()
+    plt.title('Расчётный момент τ2')
+
+    plt.grid(True)
+
     plt.show()
-
 
 
 if __name__ == '__main__':

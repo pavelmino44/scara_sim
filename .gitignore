@@ -2,3 +2,5 @@
 .vscode
 __pycache__
 
+scara_sim/description/scara.gv
+scara_sim/description/scara.pdf
