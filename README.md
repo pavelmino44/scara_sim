@@ -11,7 +11,9 @@ The core of the project is a custom Python implementation that handles:
 
 The repository serves as a testbed for studying direct torque control, dynamic modeling, and trajectory tracking for robotic manipulators.
 
-![Demonstrative screenshot of the SCARA simulation](./docs/image.png)
+<div align="center">
+  <img src="./docs/image.png" alt="Demonstrative screenshot of the SCARA simulation" width="600">
+</div>
 
 ## Dependencies
 1. List of dependencies for ROS2 Humble:
