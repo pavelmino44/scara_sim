@@ -1,3 +1,18 @@
+# scara_sim
+
+## Overview
+This project provides a comprehensive simulation of a 2-DOF planar SCARA robot using **ROS 2 Humble** and **Gazebo**. 
+
+The core of the project is a custom Python implementation that handles:
+- **Inverse Kinematics** (converting Cartesian X/Y coordinates to joint angles).
+- **Trajectory Generation** (producing P-shaped and other Cartesian paths with specific velocity/acceleration profiles).
+- **Lagrange Dynamics** (calculating the exact torques required for motion).
+- **Effort Control** (publishing the calculated torques directly to the robot's joints).
+
+The repository serves as a testbed for studying direct torque control, dynamic modeling, and trajectory tracking for robotic manipulators.
+
+![Demonstrative screenshot of the SCARA simulation](./docs/image.png)
+
 ## Dependencies
 1. List of dependencies for ROS2 Humble:
 - ros-humble-xacro

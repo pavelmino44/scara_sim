@@ -340,7 +340,8 @@ def generate_segment(
     start,
     end,
     t_start,
-    previous_q
+    previous_q,
+    accel_time=0.5
 ):
     """
     Генерирует один прямолинейный участок
@@ -359,54 +360,55 @@ def generate_segment(
 
     x0, y0 = start
     x1, y1 = end
-
     dx = x1 - x0
     dy = y1 - y0
-
     distance = math.sqrt(dx**2 + dy**2)
-
-    duration = distance / V
-
+    
+    # Время разгона/торможения
+    t_acc = min(accel_time, distance / V / 2) # Ограничиваем, чтобы не было перекрытия фаз
+    t_const = (distance - V * t_acc) / V
+    duration = 2 * t_acc + t_const
+    
+    # Ускорение для разгона
+    A = V / t_acc
+    
     direction_x = dx / distance
     direction_y = dy / distance
-
+    
     num_points = int(round(duration / DT))
-
     points = []
-
     q_previous = previous_q
 
     for i in range(num_points + 1):
-
         local_t = min(i * DT, duration)
-
-        # Для последней точки гарантируем точное попадание
-        if local_t >= duration:
-            s = distance
-            x_dot = 0.0
-            y_dot = 0.0
-
+        
+        # Трапецеидальный профиль: разгон -> постоянная скорость -> торможение
+        if local_t < t_acc:
+            s = 0.5 * A * local_t**2
+            v = A * local_t
+            a = A
+        elif local_t < t_acc + t_const:
+            s = 0.5 * A * t_acc**2 + V * (local_t - t_acc)
+            v = V
+            a = 0.0
+        elif local_t <= duration:
+            t_rem = local_t - (t_acc + t_const)
+            v = V - A * t_rem
+            s = 0.5 * A * t_acc**2 + V * t_const + V * t_rem - 0.5 * A * t_rem**2
+            a = -A
         else:
-            s = V * local_t
-            x_dot = V * direction_x
-            y_dot = V * direction_y
+            s = distance
+            v = 0.0
+            a = 0.0
 
         x = x0 + direction_x * s
         y = y0 + direction_y * s
-
-        # На прямом участке Cartesian acceleration = 0
-        x_ddot = 0.0
-        y_ddot = 0.0
-
-        # В последний момент участка скорость
-        # здесь обнуляется только в точке.
-        #
-        # Это НЕ физическое плавное торможение.
-        # Оно нужно, чтобы не передавать в следующий
-        # участок скорость предыдущего направления.
-        if local_t >= duration:
-            x_dot = 0.0
-            y_dot = 0.0
+        
+        x_dot = v * direction_x
+        y_dot = v * direction_y
+        
+        x_ddot = a * direction_x
+        y_ddot = a * direction_y
 
         q1, q2 = inverse_kinematics(
             x,
