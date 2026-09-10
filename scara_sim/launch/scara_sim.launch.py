@@ -1,11 +1,19 @@
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, RegisterEventHandler, ExecuteProcess, TimerAction
+from launch.actions import (
+    IncludeLaunchDescription,
+    RegisterEventHandler,
+    ExecuteProcess,
+    TimerAction,
+    DeclareLaunchArgument,
+)
+from launch.substitutions import LaunchConfiguration
 from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 import os
 import xacro
+
 
 def generate_launch_description():
     pkg_scara_sim = get_package_share_directory('scara_sim')
@@ -23,6 +31,18 @@ def generate_launch_description():
 
     robot_description = {'robot_description': urdf_str}
 
+    # ============================================================
+    # Аргумент выбора метода динамики
+    # ============================================================
+    method_arg = DeclareLaunchArgument(
+        'method',
+        default_value='lagrange',
+        choices=['lagrange', 'newton-euler', 'compare'],
+        description='Dynamics calculation method: lagrange | newton-euler | compare'
+    )
+
+    method = LaunchConfiguration('method')
+
     # Запуск Gazebo Sim
     gz_sim = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -31,7 +51,6 @@ def generate_launch_description():
         launch_arguments={'gz_args': f'-r -v 1 {world_file}'}.items()
     )
 
-    # Публикация robot_description
     robot_state_publisher = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
@@ -40,30 +59,25 @@ def generate_launch_description():
             robot_description,
             {
                 'use_sim_time': True,
-                'publish_frequency': 60.0, 
+                'publish_frequency': 60.0,
             }
         ],
-        
     )
 
-    # Спавн робота
     spawn_robot = Node(
         package='ros_gz_sim',
         executable='create',
         arguments=['-topic', 'robot_description', '-name', 'scara', '-allow_renaming', 'true'],
         output='screen',
         parameters=[{'use_sim_time': True}]
-        
     )
 
-    # Spawner'ы контроллеров
     jsb_spawner = Node(
         package='controller_manager',
         executable='spawner',
         arguments=['joint_state_broadcaster'],
         output='screen',
         parameters=[{'use_sim_time': True}]
-        
     )
 
     effort_controller_spawner = Node(
@@ -74,61 +88,59 @@ def generate_launch_description():
         parameters=[{'use_sim_time': True}]
     )
 
-    # Публикатор моментов
     effort_publisher = Node(
         package='scara_sim',
         executable='effort_publisher',
         output='screen',
         parameters=[{'use_sim_time': True}]
     )
-    
-    # Публикатор моментов
+
+    # ============================================================
+    # Генератор траектории — передаём --method как CLI-аргумент
+    # ============================================================
     trajectory_generator = Node(
         package='scara_sim',
         executable='trajectory_generator',
         output='screen',
+        arguments=['--method', method],
         parameters=[{'use_sim_time': True}]
     )
 
-    # Мост для /clock
     bridge = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
         arguments=[
             '/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock',
-            ],
+        ],
         output='screen',
         parameters=[{'use_sim_time': True}]
-        
     )
-    
+
     rviz = Node(
         package='rviz2',
         executable='rviz2',
         arguments=['-d', rviz_config],
         output='screen',
         parameters=[{'use_sim_time': True}]
-        
     )
-    
+
     trajectory_visualizer = Node(
         package='scara_sim',
         executable='trajectory_visualizer',
         output='screen',
         parameters=[{
             'use_sim_time': True,
-            'publish_frequency': 60.0, 
+            'publish_frequency': 60.0,
         }]
-        
     )
 
     real_trajectory_visualizer = Node(
         package='scara_sim',
         executable='real_trajectory_visualizer',
         output='screen',
-        parameters=[{'use_sim_time': True}]  
+        parameters=[{'use_sim_time': True}]
     )
-    
+
     move_camera = ExecuteProcess(
         cmd=[
             'ign', 'service', '-s', '/gui/move_to/pose',
@@ -142,15 +154,16 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        method_arg,
         trajectory_generator,
         gz_sim,
         robot_state_publisher,
         bridge,
         spawn_robot,
-        rviz,    
+        rviz,
         trajectory_visualizer,
         real_trajectory_visualizer,
-        
+
         RegisterEventHandler(
             event_handler=OnProcessExit(
                 target_action=spawn_robot,

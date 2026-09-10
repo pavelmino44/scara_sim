@@ -27,8 +27,8 @@
        МАССЫ ЗВЕНЬЕВ
        ========================================================= -->
 
-  <xacro:property name="M1" value="2.0"/>
-  <xacro:property name="M2" value="1.5"/>
+  <xacro:property name="M1" value="3.54"/>
+  <xacro:property name="M2" value="2.66"/>
 
 
   <!-- =========================================================
@@ -53,9 +53,9 @@
        r  = 0.025 м
   -->
 
-  <xacro:property name="Ixx1" value="0.000625"/>
-  <xacro:property name="Iyy1" value="0.0269792"/>
-  <xacro:property name="Izz1" value="0.0269792"/>
+  <xacro:property name="Ixx1" value="0.0011064"/>
+  <xacro:property name="Iyy1" value="0.0477579"/>
+  <xacro:property name="Izz1" value="0.0477579"/>
 
 
   <!-- Второе звено:
@@ -64,9 +64,9 @@
        r  = 0.025 м
   -->
 
-  <xacro:property name="Ixx2" value="0.00046875"/>
-  <xacro:property name="Iyy2" value="0.0114844"/>
-  <xacro:property name="Izz2" value="0.0114844"/>
+  <xacro:property name="Ixx2" value="0.00082977"/>
+  <xacro:property name="Iyy2" value="0.02032935"/>
+  <xacro:property name="Izz2" value="0.02032935"/>
 
 
   <!-- =========================================================
@@ -194,7 +194,7 @@
           length="${L1}"/>
       </geometry>
 
-      <material name="grey"/>
+      <material name="blue"/>
 
     </visual>
 
@@ -314,7 +314,7 @@
           length="${L2}"/>
       </geometry>
 
-      <material name="blue"/>
+      <material name="red"/>
 
     </visual>
 
