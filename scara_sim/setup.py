@@ -36,6 +36,10 @@ setup(
             'trajectory_visualizer = scara_sim.trajectory_visualizer:main',
             'real_trajectory_visualizer = scara_sim.real_trajectory_visualizer:main',
             'data_logger = scara_sim.data_logger:main',
+            'pid_controller = scara_sim.pid_controller:main',
+            'dc_motor_sim = scara_sim.dc_motor_sim:main',
+            'plot_tracking = scara_sim.plot_tracking:main',
+            'offline_pid_sim = scara_sim.offline_pid_sim:main',
         ],
     },
 )

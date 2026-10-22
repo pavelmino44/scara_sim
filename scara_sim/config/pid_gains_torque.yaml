@@ -1,0 +1,32 @@
+# ============================================================
+# ПИД-регулятор положения, идеальный привод (момент -> Gazebo)
+#
+#   tau = tau_ff + Kp*e + Ki*int(e) + Kd*e_dot      [Н·м]
+#
+# Для сравнения с моделью ДПТ. Запуск:
+#   ros2 launch scara_sim pid_controller.launch.py actuator:=torque
+# ============================================================
+
+pid_controller:
+  ros__parameters:
+    use_sim_time: true
+
+    joint_names: ["joint1", "joint2"]
+    link_lengths: [0.40, 0.30]
+
+    actuator: "torque"
+    mode: "ff+pid"
+
+    kp: [200.0, 30.0]       # Н·м/рад
+    ki: [200.0, 30.0]       # Н·м/(рад·с)
+    kd: [20.0, 2.5]         # Н·м·с/рад
+
+    integral_limit: [0.05, 0.05]   # рад·с
+    output_limit: [30.0, 10.0]     # Н·м
+
+    control_rate: 1000.0
+    start_delay: 1.0
+    hold_after: 1.0
+
+    trajectory_file: ""
+    log_file: ""
